@@ -1,0 +1,279 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(stringr)
+library(vars)
+```
+
+
+```{r}
+data1 = read.csv('/Users/nimesh/Documents/TimeSeries/train_project.csv')
+test = read.csv('/Users/nimesh/Documents/TimeSeries/test_project.csv')
+
+data =  data1[1:264,]
+val  = data1[265:288,]
+data = ts(data, start = c(1987,1), frequency = 12)
+```
+
+```{r}
+#for (i in seq(1,nrow(data),1))
+#{
+#data[i,'Month'] = paste( str_sub(data[i,'Month'],-6,-5),str_sub(data[i,'Month'],-4,-1), sep='/')
+#}
+#data['Month']
+```
+```{r}
+plot(ts(data[,2]), ylab = 'Unemployment_rate')
+```
+```{r}
+plot(ts(data[,3]), ylab = 'Population')
+```
+
+```{r}
+plot(log(data[,4]), ylab = 'Bankruptcy_rate')
+```
+
+The plot shows that the variance of the data changes with time. So we wapply log transformation on the data.
+```{r}
+plot(ts(data[,5]), ylab = 'House_Price_Index')
+```
+
+```{r}
+br = log(data[,4])
+plot(br)
+```
+
+After applying the log transformation, the data becomes homoscedastic.
+
+```{r}
+adf.test(br)
+br_1 <- diff(br)
+```
+
+```{r}
+adf.test(br_1)
+```
+The p-value is less than 0.05. The data is stationary.
+
+```{r}
+br_2 <- diff(br_1, lag = 12)
+```
+
+```{r}
+
+acf(br_2, lag.max = 72)
+```
+q=1,3,4
+Q=2,3,4
+```{r}
+pacf(br_2, lag.max = 48)
+```
+
+p =1/2 ,P = 0
+```{r}
+valid_ts <- ts(data = val$Bankruptcy_Rate, start = c(2009,1), frequency = 12)
+
+print(paste("Model p,q,P,Q,d;    RMSE;          Variance;            AIC; LogLik"))
+#permutations(n=3,r=2,v=x,repeats.allowed=T)
+grid <-expand.grid(0:5, 0:5,0:5, 0:5, :5)
+grid <- as.data.frame(grid)
+names(grid) <- c("Var1", "Var2", "Var3", "Var4", "Var5")
+
+for (i in 1:nrow(grid)){
+p <- grid$Var1[i] 
+q <- grid$Var2[i]
+P <- grid$Var3[i]
+Q <- grid$Var4[i]
+d <- grid$Var5[i]
+  
+m <- tryCatch(arima(x = log_br_ts, order = c(p,d,q), seasonal = list(order = c(P,1,Q), period = 12), method = "CSS", optim.control = list(maxit = 1000)),
+              error = function(e) {print(paste("gave error"))})
+
+m.rmse <- tryCatch(rmse(exp(forecast(m, h = 24)$mean), valid_ts),
+                   error = function(e) {print(paste("gave error"))})
+
+print(paste("p" = p, "q" = q, "P" = P, "Q" = Q,"d" = d, " = ",  m.rmse, m$sigma2, 
+            m$aic, m$loglik))
+
+}
+```
+```{r}
+for  (p  in  seq(0,  5)){
+  for  (q  in  seq(0,  5)){
+    for  (P  in  seq(0,  5)){
+      for  (Q  in  seq(0,  5)){
+        model  <-  arima(data[,4], 
+                       order  =  c(p,  1,  q), 
+                       seasonal  =  list(order  =  c(P,  1,  Q),  period  =  12), 
+                       method  =  "CSS", 
+                       xreg  =  data.frame(data[,4], data['Unemployment_rate']))
+        
+      
+          
+        f  <-  forecast(model,  h  =  24,  level  =  0.95,xreg = data.frame(val['Population'],val['Unemployment_Rate']))
+        rmse_c  <-  sqrt(mean((val['Bankruptcy_Rate']  -  exp(f$fitted))  ^  2))
+        
+
+       print(rmse_c)
+      }
+    } 
+  }
+}
+
+```
+
+```{r}
+m1 <- arima(br_2, order = c(2, 0, 1), seasonal = list(order = c(0, 0, 2), period = 12), method = "ML")
+m2 <- arima(br_2, order = c(2,0,1), seasonal = list(order = c(0, 0, 3), period = 12), method = "ML")
+m3 <- arima(br, order = c(2,1,3), seasonal = list(order = c(0, 1, 3), period = 12), method = "ML")
+#m4 <- arima(data, order = c(4,1,3), seasonal = list(order = c(1,1,2), period = 12), method = "ML")
+```
+```{r}
+VARselect(y = data.frame(Bev, Food, Indust))
+```
+
+```{r}
+D <- -2*(m1$loglik - m2$loglik)
+pval <- 1-pchisq(D,1)
+print(c("Test Statistic:",round(D, 4),"P-value:", round(pval, 4)))
+```
+```{r}
+D <- -2*(m1$loglik - m3$loglik)
+pval <- 1-pchisq(D,2)
+print(c("Test Statistic:",round(D, 4),"P-value:", round(pval, 4)))
+```
+
+```{r}
+pred <- forecast(object = m3, h = 24, level = 0.95)
+par(mfrow=c(1,1))
+plot(exp(br), xlim=c(1987,2014), ylim=c(0,0.09)) #plotting the data
+points(ts(val[,4], start = c(2009,1), frequency = 12), type='l')
+abline(v=2003,col='blue',lty=2) # adding a vertical line at the point where prediction starts
+points(exp(pred$mean),type='l',col='red')# plotting the predict
+points(exp(pred$lower),type='l', col='green') # plotting lower limit of the prediction interval
+points(exp(pred$upper),type='l', col='green') # plotting upper limit of the  prediction interval
+legend(1987, 23, legend = c("observed values", "prediction interval", "prediction"),
+       col = c("black", "green", "red"), lty = 1, cex = 0.8)
+```
+
+```{r}
+m4 <- arima(br,order  =  c(2,  1,  0), 
+             seasonal  =  list(order  =  c(0,  0,  2),  period  =  12),
+             method  =  "ML",  xreg  =  data)
+m5 <- arima(br,order  =  c(4,  1,  5), 
+             seasonal  =  list(order  =  c(0,  0,  1),  period  =  12),
+             method  =  "ML",  xreg  =  data)
+pred <- forecast(object = m4, h = 24, level = 0.95,  xreg  =  val)
+par(mfrow=c(1,1))
+plot(exp(br), xlim=c(1987,2014), ylim=c(0,0.06), ylab="Bankruptcy rate") #plotting the data
+points(ts(val[,4], start = c(2009,1), frequency = 12), type='l')
+abline(v=2003,col='blue',lty=2) # adding a vertical line at the point where prediction starts
+points(exp(pred$mean),type='l',col='red')# plotting the predict
+points(exp(pred$lower),type='l', col='blue') # plotting lower limit of the prediction interval
+points(exp(pred$upper),type='l', col='green') # plotting upper limit of the  prediction interval
+legend(1987, 23, legend = c("observed values", "prediction interval", "prediction"),
+       col = c("black", "green", "red"), lty = 1, cex = 0.8)
+sqrt(sum((exp(pred$mean)-val$Bankruptcy_Rate)**2)/length(test))
+```
+
+
+
+
+
+
+
+
+```{r}
+VARselect(y = data.frame(data[,1],data[,2],data[,3], data[,4]))
+```
+```{r}
+par(mar=c(1,1,1,1))
+m.var <- VAR(y = data.frame( data[,3], data[,4]), p = 10,season=12)
+#plot(m.var)
+
+# Let's now do some forecasting with this model
+pred <- predict(m.var, n.ahead = 24, ci = 0.95)
+plot(pred)
+pred$fcst$data...4. <- as.data.frame(pred$fcst$data...4.)
+rmse.var <- sqrt(mean((pred$fcst$data...4.$fcst - val$Bankruptcy_Rate)^2))
+rmse.var
+  
+```
+
+
+##Holt-Winter approach:
+
+Since time series of response variable(Bankruptcy_rate) includes both trend and seasonality we will use triple exponential smoothing for modeling using Holt-Winters approach. 
+We have used Jan,1987 to Dec, 2008 data as trainign set and Jan,2009 to Dec, 2010 as test set.
+```{r}
+data1 = read.csv('/Users/nimesh/Documents/TimeSeries/train_project.csv')
+test = read.csv('/Users/nimesh/Documents/TimeSeries/test_project.csv')
+
+data =  data1[1:264,]
+val  = data1[265:288,]
+data = ts(data, start = c(1987,1), frequency = 12)
+n = list()
+p = list()
+q = list()
+r = list()
+cnt = 1
+for  (a  in  seq(0.1, 0.8 ,0.1)){
+  for  (b  in  seq(0.1, 0.8,0.1)){
+    for  (c  in  seq(0.1, 0.8 , 0.1)){
+      
+      hwfit <- HoltWinters(log(data[,4]),alpha=a,beta=b,gamma=c,seasonal = "multiplicative" )
+      hwpred <- forecast(hwfit, h = 24, level = 0.95)
+      rmse_hw <- sqrt(mean((exp(hwpred$mean)-val$Bankruptcy_Rate)**2))
+      n[cnt] <- rmse_hw
+      cnt <- cnt+1
+      p[cnt] <- a
+      q[cnt] <-b
+      r[cnt] <- c
+    }
+  }
+}
+print(paste('The lowest value of rmse is',n[which.min(n)],':')  )   
+```
+
+
+The lowest value of rmse we achieved using Holt Winters approach of Triple exponential smoothing is `n[which.min(n)]` for alpha = `p[which.min(n)]`  , beta = `q[which.min(n)]` and gamma = `r[which.min(n)]`
+
+##Elastic Net approach
+
+Lets now use Elastic net for predciting the Bankruptcy rate for our validation set and check the rmse value.
+
+
+```{r}
+data <- read.csv('/Users/nimesh/Documents/TimeSeries/train_project.csv', sep = ',')
+set.seed(1) 
+train <- data[1:264, ]
+val <- data[265:288, ]
+y.train <- train$Bankruptcy_Rate
+y.val <- val$Bankruptcy_Rate
+
+grid.lambda <- 10^seq(10, -2, length = 100)
+traintest=rbind(train,val)
+traintest=traintest[,-1]
+X = model.matrix(Bankruptcy_Rate ~., data = traintest)
+EN.model.train <- glmnet(X[1:nrow(train),], exp(y.train), alpha = 0.5, lambda = grid.lambda)
+
+set.seed(1) #for reproducability
+cv.out <- cv.glmnet(X[1:nrow(train),], exp(y.train), alpha = 0.5)
+#Find the best lambda value
+best.lambda <- cv.out$lambda.min
+
+plot(cv.out)
+abline(v = log(best.lambda), col = "blue", lwd = 2)
+model2 <-  glmnet(X[1:nrow(train),], log(y.train), alpha = 0.5, lambda = best.lambda)
+
+pred <- predict(model2, lambda = best.lambda, newx = X[-(1:nrow(train)),])
+rmse_2 <- sqrt(mean((exp(EN.pred) - y.val)^2)) 
+print(paste('The rmse for elastic net model is ', rmse_2, ':'))
+```
+
+
+The value of lambda which we used for fitting our model is `best.lambda` and the rmse we achieved is `rmse.EN`
